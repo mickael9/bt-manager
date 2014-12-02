@@ -53,7 +53,7 @@ class Signal():
         self.user_callback(self.signal, self.user_arg, *args)
 
 
-class BTSimpleInterface:
+class BTSimpleInterface(object):
     """
     Wrapper around dbus to encapsulated a BT simple interface
     entry point (i.e., has no signals or properties).
@@ -73,6 +73,7 @@ class BTSimpleInterface:
         self._object = self._bus.get_object('org.bluez', path)
         self._interface = dbus.Interface(self._object, addr)
         self._path = path
+        super(BTSimpleInterface, self).__init__()
 
 
 # This class is not intended to be instantiated directly and should be
@@ -92,18 +93,24 @@ class BTInterface(BTSimpleInterface):
         and properties.
     """
 
-    SIGNAL_PROPERTY_CHANGED = 'PropertyChanged'
+    SIGNAL_PROPERTIES_CHANGED = 'PropertiesChanged'
     """
-    :signal PropertyChanged(sig_name, user_arg, prop_name, prop_value):
-        Signal notifying when a property has changed.
+    :signal PropertiesChanged(sig_name, user_arg, interface_name,
+                              changed_props, invalidated_props):
+        Signal notifying when one or more properties change on an object.
     """
 
     def __init__(self, path, addr):
         BTSimpleInterface.__init__(self, path, addr)
         self._signals = {}
         self._signal_names = []
-        self._properties = self._interface.GetProperties().keys()
-        self._register_signal_name(BTInterface.SIGNAL_PROPERTY_CHANGED)
+        self._properties_manager = dbus.Interface(self._object,
+                                                  dbus.PROPERTIES_IFACE)
+        try:
+            self._properties = list(self.get_property())
+            self._register_signal_name(BTInterface.SIGNAL_PROPERTIES_CHANGED)
+        except dbus.exceptions.DBusException:
+            pass
 
     def _register_signal_name(self, name):
         """
@@ -112,7 +119,7 @@ class BTInterface(BTSimpleInterface):
         for each signal that may be used via :py:meth:`add_signal_receiver`
 
         :param str name: Signal name to register e.g.,
-            :py:attr:`SIGNAL_PROPERTY_CHANGED`
+            :py:attr:`SIGNAL_PROPERTIES_CHANGED`
         :return:
         """
         self._signal_names.append(name)
@@ -127,7 +134,7 @@ class BTInterface(BTSimpleInterface):
         :param func callback_fn: User-defined callback function to call when
             signal triggers
         :param str signal: Signal name e.g.,
-            :py:attr:`.BTInterface.SIGNAL_PROPERTY_CHANGED`
+            :py:attr:`.BTInterface.SIGNAL_PROPERTIES_CHANGED`
         :param user_arg: User-defined callback argument to be passed with
             callback function
         :return:
@@ -137,10 +144,17 @@ class BTInterface(BTSimpleInterface):
         if (signal in self._signal_names):
             s = Signal(signal, callback_fn, user_arg)
             self._signals[signal] = s
-            self._bus.add_signal_receiver(s.signal_handler,
-                                          signal,
-                                          dbus_interface=self._dbus_addr,
-                                          path=self._path)
+
+            if signal == self.SIGNAL_PROPERTIES_CHANGED:
+                self._bus.add_signal_receiver(s.signal_handler,
+                                              signal,
+                                              dbus_interface=dbus.PROPERTIES_IFACE,  # noqa
+                                              path=self._path)
+            else:
+                self._bus.add_signal_receiver(s.signal_handler,
+                                              signal,
+                                              dbus_interface=self._dbus_addr,
+                                              path=self._path)
         else:
             raise BTSignalNameNotRecognisedException
 
@@ -152,7 +166,7 @@ class BTInterface(BTSimpleInterface):
         :py:exc:`exceptions.BTSignalNameNotRecognisedException`
 
         :param str signal: Signal name to uninstall
-            e.g., :py:attr:`SIGNAL_PROPERTY_CHANGED`
+            e.g., :py:attr:`SIGNAL_PROPERTIES_CHANGED`
         :return:
         :raises BTSignalNameNotRecognisedException: if the signal name is
             not registered
@@ -160,9 +174,14 @@ class BTInterface(BTSimpleInterface):
         if (signal in self._signal_names):
             s = self._signals.get(signal)
             if (s):
-                self._bus.remove_signal_receiver(s.signal_handler,
-                                                 signal,
-                                                 dbus_interface=self._dbus_addr)  # noqa
+                if signal == self.SIGNAL_PROPERTIES_CHANGED:
+                    self._bus.remove_signal_receiver(s.signal_handler,
+                                                     signal,
+                                                     dbus_interface=dbus.PROPERTIES_IFACE)  # noqa
+                else:
+                    self._bus.remove_signal_receiver(s.signal_handler,
+                                                     signal,
+                                                     dbus_interface=self._dbus_addr)  # noqa
                 self._signals.pop(signal)
         else:
             raise BTSignalNameNotRecognisedException
@@ -186,9 +205,9 @@ class BTInterface(BTSimpleInterface):
         :raises dbus.Exception: org.bluez.Error.InvalidArguments
         """
         if (name):
-            return self._interface.GetProperties()[name]
+            return self._properties_manager.Get(self._dbus_addr, name)
         else:
-            return self._interface.GetProperties()
+            return self._properties_manager.GetAll(self._dbus_addr)
 
     def set_property(self, name, value):
         """
@@ -207,16 +226,15 @@ class BTInterface(BTSimpleInterface):
         :raises dbus.Exception: org.bluez.Error.InvalidArguments
         """
         typeof = type(self.get_property(name))
-        self._interface.SetProperty(name,
-                                    translate_to_dbus_type(typeof, value))
+        self._properties_manager.Set(self._dbus_addr, name,
+                                     translate_to_dbus_type(typeof, value))
 
     def __getattr__(self, name):
         """Override default getattr behaviours to allow DBus object
         properties to be exposed in the class for getting"""
-        if name in self.__dict__:
-            return self.__dict__[name]
-        elif '_properties' in self.__dict__ and name in self._properties:
+        if '_properties' in self.__dict__ and name in self._properties:
             return self.get_property(name)
+        raise AttributeError(name)
 
     def __setattr__(self, name, value):
         """Override default setattr behaviours to allow DBus object
@@ -228,8 +246,10 @@ class BTInterface(BTSimpleInterface):
 
     def __repr__(self):
         """Stringify the Dbus interface properties as raw"""
-        return self.__str__()
+        if '_properties' in self.__dict__:
+            return pprint.pformat(self.get_property())
+        return BTSimpleInterface.__repr__(self)
 
     def __str__(self):
         """Stringify the Dbus interface properties in a nice format"""
-        return pprint.pformat(self._interface.GetProperties())
+        return repr(self)

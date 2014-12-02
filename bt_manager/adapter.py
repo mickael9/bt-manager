@@ -87,39 +87,11 @@ class BTAdapter(BTInterface):
     See also: :py:class:`.BTManager`
     """
 
-    SIGNAL_DEVICE_FOUND = 'DeviceFound'
-    """
-    :signal DeviceFound(signal_name, user_arg, device_path): Signal
-        notifying when a new device has been found
-    """
-    SIGNAL_DEVICE_REMOVED = 'DeviceRemoved'
-    """
-    :signal DeviceRemoved(signal_name, user_arg, device_path):
-        Signal notifying when a device has been removed
-    """
-    SIGNAL_DEVICE_CREATED = 'DeviceCreated'
-    """
-    :signal DeviceCreated(signal_name, user_arg, device_path):
-        Signal notifying when a new device is created
-    """
-    SIGNAL_DEVICE_DISAPPEARED = 'DeviceDisappeared'
-    """
-    :signal DeviceDisappeared(signal_name, user_arg, device_path):
-        Signal notifying when a device is now out-of-range
-    """
-
-    def __init__(self, adapter_path=None, adapter_id=None):
+    def __init__(self, adapter_path=None, **kwargs):
         manager = BTManager()
         if (adapter_path is None):
-            if (adapter_id is None):
-                adapter_path = manager.default_adapter()
-            else:
-                adapter_path = manager.find_adapter(adapter_id)
-        BTInterface.__init__(self, adapter_path, 'org.bluez.Adapter')
-        self._register_signal_name(BTAdapter.SIGNAL_DEVICE_FOUND)
-        self._register_signal_name(BTAdapter.SIGNAL_DEVICE_REMOVED)
-        self._register_signal_name(BTAdapter.SIGNAL_DEVICE_CREATED)
-        self._register_signal_name(BTAdapter.SIGNAL_DEVICE_DISAPPEARED)
+                adapter_path = manager.find_adapter(**kwargs)
+        BTInterface.__init__(self, adapter_path, 'org.bluez.Adapter1')
 
     def start_discovery(self):
         """
@@ -182,49 +154,6 @@ class BTAdapter(BTInterface):
         """
         return self._interface.ListDevices()
 
-    def create_paired_device(self, dev_id, agent_path,
-                             capability, cb_notify_device, cb_notify_error):
-        """
-        Creates a new object path for a remote device. This
-        method will connect to the remote device and retrieve
-        all SDP records and then initiate the pairing.
-
-        If a previously :py:meth:`create_device` was used
-        successfully, this method will only initiate the pairing.
-
-        Compared to :py:meth:`create_device` this method will
-        fail if the pairing already exists, but not if the object
-        path already has been created. This allows applications
-        to use :py:meth:`create_device` first and then, if needed,
-        use :py:meth:`create_paired_device` to initiate pairing.
-
-        The agent object path is assumed to reside within the
-        process (D-Bus connection instance) that calls this
-        method. No separate registration procedure is needed
-        for it and it gets automatically released once the
-        pairing operation is complete.
-
-        :param str dev_id: New device MAC address create
-            e.g., '11:22:33:44:55:66'
-        :param str agent_path: Path used when creating the
-            bluetooth agent e.g., '/test/agent'
-        :param str capability: Pairing agent capability
-            e.g., 'DisplayYesNo', etc
-        :param func cb_notify_device: Callback on success.  The
-            callback is called with the new device's object
-            path as an argument.
-        :param func cb_notify_error: Callback on error.  The
-            callback is called with the error reason.
-        :return:
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.Failed
-        """
-        return self._interface.CreatePairedDevice(dev_id,
-                                                  agent_path,
-                                                  capability,
-                                                  reply_handler=cb_notify_device,  # noqa
-                                                  error_handler=cb_notify_error)   # noqa
-
     def remove_device(self, dev_path):
         """
         This removes the remote device object at the given
@@ -238,36 +167,3 @@ class BTAdapter(BTInterface):
         """
         return self._interface.RemoveDevice(dev_path)
 
-    def register_agent(self, path, capability):
-        """
-        This registers the adapter wide agent.
-
-        The object path defines the path the of the agent
-        that will be called when user input is needed.
-
-        If an application disconnects from the bus all
-        of its registered agents will be removed.
-
-        :param str path: Freely definable path for agent e.g., '/test/agent'
-        :param str capability: The capability parameter can have the values
-            "DisplayOnly", "DisplayYesNo", "KeyboardOnly" and "NoInputNoOutput"
-            which reflects the input and output capabilities of the agent.
-            If an empty string is used it will fallback to "DisplayYesNo".
-        :return:
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.AlreadyExists
-        """
-        return self._interface.RegisterAgent(path, capability)
-
-    def unregister_agent(self, path):
-        """
-        This unregisters the agent that has been previously
-        registered. The object path parameter must match the
-        same value that has been used on registration.
-
-        :param str path: Previously defined path for agent
-            e.g., '/test/agent'
-        :return:
-        :raises dbus.Exception: org.bluez.Error.DoesNotExist
-        """
-        return self._interface.UnregisterAgent(path)

@@ -15,63 +15,27 @@ class BTManager(BTInterface):
     See also :py:class:`.BTAdapter`
     """
 
-    SIGNAL_ADAPTER_ADDED = 'AdapterAdded'
-    """
-    :signal AdapterAdded(signal_name, user_arg, object_path):
-        Signal notifying when an adapter is added.
-    """
-    SIGNAL_ADAPTER_REMOVED = 'AdapterRemoved'
-    """
-    :signal AdapterRemoved(signal_name, user_arg, object_path):
-        Signal notifying when an adapter is removed.
-        .. note: In case all adapters are removed this signal will not
-        be emitted. The AdapterRemoved signal has to be used to
-        detect that no default adapter is selected or available
-        anymore.
-    """
-    SIGNAL_DEFAULT_ADAPTER_CHANGED = 'DefaultAdapterChanged'
-    """
-    :signal DefaultAdapterChanged(signal_name, user_arg, object_path):
-        Signal notifying when the default adapter has been changed.
-    """
+    SIGNAL_INTERFACES_ADDED = 'InterfacesAdded'
+    SIGNAL_INTERFACES_REMOVED = 'InterfacesRemoved'
 
     def __init__(self):
-        BTInterface.__init__(self, '/', 'org.bluez.Manager')
-        self._register_signal_name(BTManager.SIGNAL_ADAPTER_ADDED)
-        self._register_signal_name(BTManager.SIGNAL_ADAPTER_REMOVED)
-        self._register_signal_name(BTManager.SIGNAL_DEFAULT_ADAPTER_CHANGED)
+        BTInterface.__init__(self, '/', 'org.freedesktop.DBus.ObjectManager')
+        self._register_signal_name(BTManager.SIGNAL_INTERFACES_ADDED)
+        self._register_signal_name(BTManager.SIGNAL_INTERFACES_REMOVED)
 
-    def default_adapter(self):
-        """
-        Obtain the default BT adapter object path.
-
-        :return: Object path of default adapter
-        :rtype: str
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.NoSuchAdapter
-        """
-        return self._interface.DefaultAdapter()
-
-    def find_adapter(self, pattern):
-        """
-        Returns object path for the specified adapter.
-
-        :param str pattern:  Valid patterns are "hci0" or "00:11:22:33:44:55".
-        :return: Object path of adapter
-        :rtype: str
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.NoSuchAdapter
-        """
-        return self._interface.FindAdapter(pattern)
+    def find_adapter(self, **kwargs):
+        for adapter in self.list_adapters():
+            all_match = True
+            for prop, val in kwargs:
+                if getattr(adapter, prop) != val:
+                    all_match = False
+                    break
+            if all_match:
+                return adapter
 
     def list_adapters(self):
-        """
-        Returns list of adapter object paths under /org/bluez
+        objects = self._interface.GetManagedObjects()
 
-        :return: List of object paths or each adapter attached
-        :rtype: list
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.Failed
-        :raises dbus.Exception: org.bluez.Error.OutOfMemory
-        """
-        return self._interface.ListAdapters()
+        for path, interfaces in objects.items():
+            if 'org.bluez.Adapter1' in interfaces:
+                yield path

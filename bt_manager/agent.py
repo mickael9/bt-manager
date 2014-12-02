@@ -2,8 +2,62 @@ from __future__ import unicode_literals
 
 import dbus.service
 
+from interface import BTSimpleInterface
 from exceptions import BTRejectedException
 
+
+class BTAgentManager(BTSimpleInterface):
+    def __init__(self):
+        BTSimpleInterface.__init__(
+            self, '/org/bluez', 'org.bluez.AgentManager1')
+
+    def register_agent(self, path, capability):
+        """
+        This registers the adapter wide agent.
+
+        The object path defines the path the of the agent
+        that will be called when user input is needed.
+
+        If an application disconnects from the bus all
+        of its registered agents will be removed.
+
+        :param str path: Freely definable path for agent e.g., '/test/agent'
+        :param str capability: The capability parameter can have the values
+            "DisplayOnly", "DisplayYesNo", "KeyboardOnly" and "NoInputNoOutput"
+            which reflects the input and output capabilities of the agent.
+            If an empty string is used it will fallback to "DisplayYesNo".
+        :return:
+        :raises dbus.Exception: org.bluez.Error.InvalidArguments
+        :raises dbus.Exception: org.bluez.Error.AlreadyExists
+        """
+        return self._interface.RegisterAgent(path, capability)
+
+    def unregister_agent(self, path):
+        """
+        This unregisters the agent that has been previously
+        registered. The object path parameter must match the
+        same value that has been used on registration.
+
+        :param str path: Previously defined path for agent
+            e.g., '/test/agent'
+        :return:
+        :raises dbus.Exception: org.bluez.Error.DoesNotExist
+        """
+        return self._interface.UnregisterAgent(path)
+
+    def request_default_agent(self, path):
+        """
+        This requests is to make the application agent the default agent.
+        The application is required to register an agent.
+
+        Special permission might be required to become the default agent.
+
+        :param str path: Previously defined path for agent
+            e.g., '/test/agent'
+        :return:
+        :raises dbus.Exception: org.bluez.Error.DoesNotExist
+        """
+        return self._interface.RequestDefaultAgent()
 
 class BTAgent(dbus.service.Object):
     """
@@ -39,12 +93,13 @@ class BTAgent(dbus.service.Object):
     """
 
     NOTIFY_ON_RELEASE = 'Release'
-    NOTIFY_ON_AUTHORIZE = 'Authorize'
     NOTIFY_ON_REQUEST_PIN_CODE = 'RequestPinCode'
+    NOTIFY_ON_DISPLAY_PIN_CODE = 'DisplayPinCode'
     NOTIFY_ON_REQUEST_PASS_KEY = 'RequestPasskey'
     NOTIFY_ON_DISPLAY_PASS_KEY = 'DisplayPasskey'
     NOTIFY_ON_REQUEST_CONFIRMATION = 'RequestConfirmation'
-    NOTIFY_ON_CONFIRM_MODE_CHANGE = 'ConfirmModeChange'
+    NOTIFY_ON_REQUEST_AUTHORIZATION = 'RequestAuthorization'
+    NOTIFY_ON_AUTHORIZE_SERVICE = 'AuthorizeService'
     NOTIFY_ON_CANCEL = 'Cancel'
 
     def __init__(self,
@@ -53,48 +108,39 @@ class BTAgent(dbus.service.Object):
                  default_pin_code='0000',
                  default_pass_key=0,   # Range: 0-999999
                  cb_notify_on_release=None,
-                 cb_notify_on_authorize=None,
                  cb_notify_on_request_pin_code=None,
+                 cb_notify_on_display_pin_code=None,
                  cb_notify_on_request_pass_key=None,
                  cb_notify_on_display_pass_key=None,
                  cb_notify_on_request_confirmation=None,
-                 cb_notify_on_confirm_mode_change=None,
+                 cb_notify_on_request_authorization=None,
+                 cb_notify_on_authorize_service=None,
                  cb_notify_on_cancel=None):
 
         self.auto_authorize_connections = auto_authorize_connections
         self.default_pin_code = default_pin_code
         self.default_pass_key = default_pass_key
         self.cb_notify_on_release = cb_notify_on_release
-        self.cb_notify_on_authorize = cb_notify_on_authorize
         self.cb_notify_on_request_pin_code = cb_notify_on_request_pin_code
+        self.cb_notify_on_display_pin_code = cb_notify_on_display_pin_code
         self.cb_notify_on_request_pass_key = cb_notify_on_request_pass_key
         self.cb_notify_on_display_pass_key = cb_notify_on_display_pass_key
         self.cb_notify_on_request_confirmation = \
             cb_notify_on_request_confirmation
-        self.cb_notify_on_confirm_mode_change = \
-            cb_notify_on_confirm_mode_change
+        self.cb_notify_on_request_authorization = \
+            cb_notify_on_request_authorization
+        self.cb_notify_on_authorize_service = cb_notify_on_authorize_service
         self.cb_notify_on_cancel = cb_notify_on_cancel
         bus = dbus.SystemBus()
         super(BTAgent, self).__init__(bus, path)
 
     # Service object entry points defined below here
-    @dbus.service.method("org.bluez.Agent", in_signature="", out_signature="")
+    @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
     def Release(self):
         if (self.cb_notify_on_release):
             self.cb_notify_on_release(BTAgent.NOTIFY_ON_RELEASE)
 
-    @dbus.service.method("org.bluez.Agent", in_signature="os",
-                         out_signature="")
-    def Authorize(self, device, uuid):
-        if (self.cb_notify_on_authorize):
-            if (not self.cb_notify_on_authorize(BTAgent.NOTIFY_ON_AUTHORIZE,
-                                                device,
-                                                uuid)):
-                raise BTRejectedException('Connection not authorized by user')
-        elif (not self.auto_authorize_connections):
-            raise BTRejectedException('Auto authorize is off')
-
-    @dbus.service.method("org.bluez.Agent", in_signature="o",
+    @dbus.service.method("org.bluez.Agent1", in_signature="o",
                          out_signature="s")
     def RequestPinCode(self, device):
         if (self.cb_notify_on_request_pin_code):
@@ -108,7 +154,14 @@ class BTAgent(dbus.service.Object):
             pin_code = self.default_pin_code
         return dbus.String(pin_code)
 
-    @dbus.service.method("org.bluez.Agent", in_signature="o",
+    @dbus.service.method("org.bluez.Agent1", in_signature="ou",
+                         out_signature="")
+    def DisplayPinCode(self, device, pincode):
+        if (self.cb_notify_on_display_pin_code):
+            self.cb_notify_on_display_pin_code(BTAgent.NOTIFY_ON_DISPLAY_PIN_CODE,  # noqa
+                                               device, pincode)
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="o",
                          out_signature="s")
     def RequestPasskey(self, device):
         if (self.cb_notify_on_request_pass_key):
@@ -122,14 +175,14 @@ class BTAgent(dbus.service.Object):
             pass_key = self.default_pass_key
         return dbus.UInt32(pass_key)
 
-    @dbus.service.method("org.bluez.Agent", in_signature="ou",
+    @dbus.service.method("org.bluez.Agent1", in_signature="ou",
                          out_signature="")
     def DisplayPasskey(self, device, pass_key):
         if (self.cb_notify_on_display_pass_key):
             self.cb_notify_on_display_pass_key(BTAgent.NOTIFY_ON_DISPLAY_PASS_KEY,  # noqa
                                                device, pass_key)
 
-    @dbus.service.method("org.bluez.Agent", in_signature="ou",
+    @dbus.service.method("org.bluez.Agent1", in_signature="ou",
                          out_signature="")
     def RequestConfirmation(self, device, pass_key):
         if (self.cb_notify_on_request_confirmation):
@@ -138,15 +191,28 @@ class BTAgent(dbus.service.Object):
                 raise \
                     BTRejectedException('User confirmation of pass key negative')  # noqa
 
-    @dbus.service.method("org.bluez.Agent", in_signature="s", out_signature="")
-    def ConfirmModeChange(self, mode):
-        if (self.cb_notify_on_confirm_mode_change):
-            if (not self.cb_notify_on_confirm_mode_change(BTAgent.NOTIFY_ON_CONFIRM_MODE_CHANGE,  # noqa
-                                                          mode)):
-                raise \
-                    BTRejectedException('User mode change confirmation negative')  # noqa
+    @dbus.service.method("org.bluez.Agent1", in_signature="o",
+                         out_signature="")
+    def RequestAuthorization(self, device):
+        if (self.cb_notify_on_authorize):
+            if (not self.cb_notify_on_request_authorization(BTAgent.NOTIFY_ON_REQUEST_AUTHORIZATION,  # noqa
+                                                            device)):
+                raise BTRejectedException('Connection not authorized by user')
+        elif (not self.auto_authorize_connections):
+            raise BTRejectedException('Auto authorize is off')
 
-    @dbus.service.method("org.bluez.Agent", in_signature="", out_signature="")
+    @dbus.service.method("org.bluez.Agent1", in_signature="os",
+                         out_signature="")
+    def AuthorizeService(self, device, uuid):
+        if (self.cb_notify_on_authorize_service):
+            if (not self.cb_notify_on_authorize(BTAgent.NOTIFY_ON_AUTHORIZE_SERVICE,  # noqa
+                                                device,
+                                                uuid)):
+                raise BTRejectedException('Connection not authorized by user')
+        elif (not self.auto_authorize_connections):
+            raise BTRejectedException('Auto authorize is off')
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
     def Cancel(self):
         if (self.cb_notify_on_cancel):
             self.cb_notify_on_cancel(BTAgent.NOTIFY_ON_CANCEL)
