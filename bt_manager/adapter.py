@@ -93,67 +93,6 @@ class BTAdapter(BTInterface):
                 adapter_path = manager.find_adapter(**kwargs)
         BTInterface.__init__(self, adapter_path, 'org.bluez.Adapter1')
 
-    def start_discovery(self):
-        """
-        This method starts the device discovery session. This
-        includes an inquiry procedure and remote device name
-        resolving. Use :py:meth:`stop_discovery` to release the sessions
-        acquired.
-
-        This process will start emitting :py:attr:`SIGNAL_DEVICE_FOUND`
-        and :py:attr:`.SIGNAL_PROPERTY_CHANGED` 'discovering' signals.
-
-        :return:
-        :raises dbus.Exception: org.bluez.Error.NotReady
-        :raises dbus.Exception: org.bluez.Error.Failed
-        """
-        return self._interface.StartDiscovery()
-
-    def stop_discovery(self):
-        """
-        This method will cancel any previous :py:meth:`start_discovery`
-        transaction.
-
-        Note that a discovery procedure is shared between all
-        discovery sessions thus calling py:meth:`stop_discovery` will
-        only release a single session.
-
-        :return:
-        :raises dbus.Exception: org.bluez.Error.NotReady
-        :raises dbus.Exception: org.bluez.Error.Failed
-        :raises dbus.Exception: org.bluez.Error.NotAuthorized
-        """
-        return self._interface.StopDiscovery()
-
-    def find_device(self, dev_id):
-        """
-        Returns the object path of device for given address.
-        The device object needs to be first created via
-        :py:meth:`create_device` or
-        :py:meth:`create_paired_device`
-
-        :param str dev_id: Device MAC address to look-up e.g.,
-            '11:22:33:44:55:66'
-        :return: Device object path e.g.,
-            '/org/bluez/985/hci0/dev_00_11_67_D2_AB_EE'
-        :rtype: str
-        :raises dbus.Exception: org.bluez.Error.DoesNotExist
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        """
-        return self._interface.FindDevice(dev_id)
-
-    def list_devices(self):
-        """
-        Returns list of device object paths.
-
-        :return: List of device object paths
-        :rtype: list
-        :raises dbus.Exception: org.bluez.Error.InvalidArguments
-        :raises dbus.Exception: org.bluez.Error.Failed
-        :raises dbus.Exception: org.bluez.Error.OutOfMemory
-        """
-        return self._interface.ListDevices()
-
     def remove_device(self, dev_path):
         """
         This removes the remote device object at the given
